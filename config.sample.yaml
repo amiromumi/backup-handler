@@ -161,3 +161,23 @@ mariadb:
       password: ""
       databases: []
       output_dir: ./backups
+
+sqlserver:
+  # Uses sqlpackage /Action:Export to create a .bacpac per database.
+  # Install sqlpackage on this machine first (dotnet tool or standalone):
+  # https://learn.microsoft.com/sql/tools/sqlpackage/sqlpackage-download
+  # sqlpackage cannot export all databases at once, so 'databases' must list them.
+  instances:
+    - name: local
+      enabled: false
+      enabled_compression: true
+      host: localhost
+      port: 1433
+      username: "sa"
+      password: ""
+      databases: []
+      output_dir: ./backups
+      # accept self-signed TLS certs on the sql server (default true)
+      trust_server_certificate: true
+      # optional: full path to the sqlpackage binary if it is not on PATH
+      sqlpackage_path: sqlpackage
