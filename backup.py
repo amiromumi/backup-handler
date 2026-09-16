@@ -180,7 +180,11 @@ def main():
                 es_result = es_backup.run()
                 name = inst.get('name', inst.get('url', 'es'))
                 if es_result["status"] == "success":
-                    prometheus_pusher.update_status("es_backup", f"{name}: snapshot {es_result['snapshot']} succeeded", 1)
+                    msg = f"{name}: snapshot {es_result['snapshot']} succeeded"
+                    deleted = es_result.get('deleted_old_snapshots', 0)
+                    if deleted:
+                        msg += f", deleted {deleted} old snapshots"
+                    prometheus_pusher.update_status("es_backup", msg, 1)
                 elif es_result["status"] == "disabled":
                     prometheus_pusher.update_status("es_backup", f"{name}: disabled")
                 else:
@@ -195,38 +199,29 @@ def main():
                 mongodb_result = mongodb_backup.run()
                 name = inst.get('name', inst.get('host', 'mongodb'))
                 if mongodb_result["status"] == "success":
-                    # If path is a directory, create a tar archive first
-                    backup_path = mongodb_result['path']
-                    # if os.path.isdir(backup_path):
-                    #     tar_path = backup_path + '.tar'
-                    #     with tarfile.open(tar_path, "w") as tar:
-                    #         tar.add(backup_path, arcname=os.path.basename(backup_path))
-                    #     # Remove the directory after archiving
-                    #     import shutil
-                    #     shutil.rmtree(backup_path)
-                    #     backup_path = tar_path
-                    # Process compression/encryption
-                    enabled_compression = inst.get('enabled_compression', False)
-                    final_file = compression_encryption.process_file(backup_path, enabled_compression)
+                    # Process each dumped database directory
+                    for backup_path in mongodb_result['dirs']:
+                        enabled_compression = inst.get('enabled_compression', False)
+                        final_file = compression_encryption.process_file(backup_path, enabled_compression)
 
-                    # Remove original file(s)
-                    if os.path.isfile(backup_path):
-                        os.remove(backup_path)
-                    elif os.path.isdir(backup_path):
-                        shutil.rmtree(backup_path)
+                        # Remove original directory
+                        if os.path.isfile(backup_path):
+                            os.remove(backup_path)
+                        elif os.path.isdir(backup_path):
+                            shutil.rmtree(backup_path)
 
-                    # Upload to S3 if file changed
-                    if final_file != backup_path:
-                        s3_result = s3_uploader.upload(final_file, os.path.basename(final_file))
-                        if s3_result["status"] == "success":
-                            prometheus_pusher.update_status("mongodb_upload", f"{name}: uploaded {s3_result['key']}", 1)
-                            # Remove processed file after upload
-                            os.remove(final_file)
+                        # Upload to S3 if file changed
+                        if final_file != backup_path:
+                            s3_result = s3_uploader.upload(final_file, os.path.basename(final_file))
+                            if s3_result["status"] == "success":
+                                prometheus_pusher.update_status("mongodb_upload", f"{name}: uploaded {s3_result['key']}", 1)
+                                # Remove processed file after upload
+                                os.remove(final_file)
+                            else:
+                                prometheus_pusher.update_status("mongodb_upload", f"{name}: {s3_result['message']}")
                         else:
-                            prometheus_pusher.update_status("mongodb_upload", f"{name}: {s3_result['message']}")
-                    else:
-                        prometheus_pusher.update_status("mongodb_upload", f"{name}: no upload needed")
-                    prometheus_pusher.update_status("mongodb_backup", f"{name}: backup to {final_file} succeeded", 1)
+                            prometheus_pusher.update_status("mongodb_upload", f"{name}: no upload needed")
+                    prometheus_pusher.update_status("mongodb_backup", f"{name}: backup to {mongodb_result['dirs']} succeeded", 1)
                 elif mongodb_result["status"] == "disabled":
                     prometheus_pusher.update_status("mongodb_backup", f"{name}: disabled")
                 else:
