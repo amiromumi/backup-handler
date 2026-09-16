@@ -118,9 +118,9 @@ elasticsearch:
       password: ""
       repository_type: s3
       # 'client' is the S3 client name configured on the ES server (repository-s3 plugin),
-      # 'bucket' and 'base_path' point to your S3-compatible storage (e.g. MinIO).
+      # 'base_path' is the folder inside the bucket. When 'bucket' is omitted it
+      # falls back to the bucket from the global s3 section above.
       repository_settings:
-        bucket: my-backup-bucket
         base_path: elasticsearch
         client: default
       retain_snapshot_count: 0

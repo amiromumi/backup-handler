@@ -13,14 +13,17 @@ class ElasticsearchBackup:
         """
         self.logger = logging.getLogger("elasticsearch-backup")
 
+        # Global s3 settings are always read from config.yaml
+        if config_file is None:
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            config_file = os.path.join(base_dir, "config.yaml")
+        with open(config_file, 'r') as f:
+            cfg_all = yaml.safe_load(f)
+        s3_global = cfg_all.get('s3', {}) or {}
+
         if instance:
             cfg = instance
         else:
-            if config_file is None:
-                base_dir = os.path.dirname(os.path.abspath(__file__))
-                config_file = os.path.join(base_dir, "config.yaml")
-            with open(config_file, 'r') as f:
-                cfg_all = yaml.safe_load(f)
             es_section = cfg_all.get('elasticsearch', {}) or {}
             instances = es_section.get('instances') if isinstance(es_section, dict) else None
             if instances and isinstance(instances, list) and len(instances) > 0:
@@ -38,6 +41,14 @@ class ElasticsearchBackup:
         self.repo_type = cfg.get('repository_type', 'fs')
         self.repo_settings = cfg.get('repository_settings', '{}')
         self.retain_snapshot_count = cfg.get('retain_snapshot_count', 0)
+
+        # For s3 repositories, fall back to the global s3 bucket when the
+        # instance doesn't specify one, so it doesn't have to be repeated.
+        if self.repo_type == 's3' and isinstance(self.repo_settings, dict):
+            if not self.repo_settings.get('bucket') and s3_global.get('bucket'):
+                self.repo_settings = dict(self.repo_settings)
+                self.repo_settings['bucket'] = s3_global['bucket']
+                self.logger.info(f"Using bucket '{s3_global['bucket']}' from global s3 config for repository")
 
         self.logger.info(f"Initialized Elasticsearch backup for URL: {self.url}, Repository: {self.repository}")
 
