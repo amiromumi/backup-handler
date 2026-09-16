@@ -3,7 +3,7 @@ import datetime
 import logging
 import json
 import yaml
-from elasticsearch import Elasticsearch
+from elasticsearch import Elasticsearch, NotFoundError
 
 
 class ElasticsearchBackup:
@@ -53,21 +53,21 @@ class ElasticsearchBackup:
     def _ensure_repository(self, es_client):
         """Create repository if it doesn't exist"""
         try:
-            # Check if repository exists
-            response = es_client.snapshot.get_repository(name=self.repository, ignore=[404])
-            if 404 in response:
-                # Repository doesn't exist, create it
-                repo_settings = json.loads(self.repo_settings)
-                es_client.snapshot.create_repository(
-                    name=self.repository,
-                    body={
-                        "type": self.repo_type,
-                        "settings": repo_settings
-                    }
-                )
-                self.logger.info(f"Created Elasticsearch repository: {self.repository}")
-            else:
-                self.logger.info(f"Elasticsearch repository already exists: {self.repository}")
+            es_client.snapshot.get_repository(name=self.repository)
+            self.logger.info(f"Elasticsearch repository already exists: {self.repository}")
+        except NotFoundError:
+            # Repository doesn't exist, create it
+            repo_settings = self.repo_settings
+            if isinstance(repo_settings, str):
+                repo_settings = json.loads(repo_settings)
+            es_client.snapshot.create_repository(
+                name=self.repository,
+                body={
+                    "type": self.repo_type,
+                    "settings": repo_settings
+                }
+            )
+            self.logger.info(f"Created Elasticsearch repository: {self.repository}")
         except Exception as e:
             self.logger.error(f"Failed to ensure repository: {e}")
             raise
@@ -75,7 +75,7 @@ class ElasticsearchBackup:
     def _create_snapshot(self, es_client):
         """Create a snapshot of specified indices or all if none specified"""
         self.logger.info("Creating Elasticsearch snapshot...")
-        timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S_%f")
         snapshot_name = f"{self.snapshot_name}_{timestamp}"
 
         indices = ",".join(self.indices) if self.indices else "_all"
